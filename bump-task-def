@@ -1,0 +1,42 @@
+#!/bin/bash
+
+usage() {
+  echo "Usage: $0 -t <task-definition-family> -s <service-name> -c <cluster-name> [-p <aws-profile>]"
+  exit 1
+}
+
+TaskARN=""
+TaskDefinitionFamily=""
+ServiceName=""
+Profile="default"
+Cluster=""
+
+
+while getopts ":t:s:p:c:" o; do
+    case "${o}" in
+        t)
+            TaskDefinitionFamily=${OPTARG}
+            ;;
+        s)
+            ServiceName=${OPTARG}
+            ;;
+        p)
+            Profile=${OPTARG}
+            ;;
+        c)
+            Cluster=${OPTARG}
+            ;;
+        *)
+            usage
+            ;;
+    esac
+done
+shift $((OPTIND-1))
+
+if [[ -z "${TaskDefinitionFamily}" ]] || [[ -z "${ServiceName}" ]] || [[ -z "${Cluster}" ]] ; then
+    usage
+fi
+
+ARN=$(aws ecs list-task-definitions --family-prefix ${TaskDefinitionFamily} --profile ${Profile} --query 'taskDefinitionArns[-1]' --output text)
+
+aws ecs update-service --service "${ServiceName}" --cluster "${Cluster}" --task-definition "${ARN}" --profile "${Profile}"

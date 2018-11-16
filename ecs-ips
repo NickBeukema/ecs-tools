@@ -1,0 +1,79 @@
+#!/bin/bash
+
+CLUSTER=""
+PROFILE="default"
+LIMIT=""
+
+usage() {
+  echo "Usage: $0 -c <cluster> [-p <profile> -l <limit>]"
+  echo " <cluster> The name of the ECS Cluster you wish to get EC2 IPs for"
+  echo " <profile> Defaults to 'default'"
+  exit 1
+}
+
+print_vars() {
+  printf "\tCluster: ${CLUSTER}\n"
+  printf "\tProfile: ${PROFILE}\n\n"
+}
+
+error_msg() {
+  printf "\nError running '${1} for:'\n"
+  print_vars
+  exit 1
+}
+
+while getopts ":c:p:l:h" o; do
+    case "${o}" in
+        c)
+            CLUSTER=${OPTARG}
+            ;;
+        p)
+            PROFILE=${OPTARG}
+            ;;
+
+        l)
+            LIMIT=${OPTARG}
+            ;;
+        *)
+            usage
+            ;;
+    esac
+done
+shift $((OPTIND-1))
+
+if [[ -z "${CLUSTER}" ]] ; then
+  echo "You must specify a cluster"
+  usage
+fi
+
+
+ECS_INSTANCE_ARNS=$(aws ecs list-container-instances --cluster ${CLUSTER} --query "containerInstanceArns" --profile ${PROFILE} --output text)
+
+if [ $? != 0 ] ; then
+  error_msg "aws ecs list-container-instances"
+fi
+
+EC2_INSTANCE_ARNS=$(aws ecs describe-container-instances --cluster ${CLUSTER} --query "containerInstances[].ec2InstanceId" --profile ${PROFILE} --output text --container-instances ${ECS_INSTANCE_ARNS})
+
+if [ $? != 0 ] ; then
+  error_msg "aws ecs describe-container-instances"
+fi
+
+EC2_PRIVATE_IPS=$(aws ec2 describe-instances --query "Reservations[].Instances[].PrivateIpAddress" --profile ${PROFILE} --output text --instance-ids ${EC2_INSTANCE_ARNS})
+
+if [ $? != 0 ] ; then
+  error_msg "aws ec2 describe-instances"
+fi
+
+IP_ARRAY=$(echo $EC2_PRIVATE_IPS | tr " " "\n")
+
+#IFS=' ' read -r -a IP_ARRAY <<< "${EC2_PRIVATE_IPS}"
+
+for i in "${!IP_ARRAY[@]}"
+do
+  if [[ "${LIMIT}" ]] && [[ "${LIMIT}" -eq "${i}" ]] ; then
+    exit 0
+  fi
+
+  printf "${IP_ARRAY[i]}\n"
+done
